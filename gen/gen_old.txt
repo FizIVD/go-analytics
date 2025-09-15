@@ -1,0 +1,397 @@
+package main
+
+import (
+	"bytes"
+	"compress/gzip"
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"math/rand"
+	"net/http"
+	"os"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"time"
+	"math"
+	"flag"
+)
+
+type Event struct {
+	DeviceID  string                 `json:"device_id"`
+	ProfileID int64                  `json:"profile_id"`
+	Action    string                 `json:"action"`
+	Extras    map[string]interface{} `json:"extras"`
+}
+
+var (
+	OSList                 = []string{"android", "ios"}
+	Types                  = []string{"smartphone", "tablet", "other"}
+	Models                 = []string{"iphone16", "xiaomi12", "pocoM6pro", "samsungS24", "pixel8"}
+	Actions                = []string{"view", "click", "purchase"}
+	REG_STEPS              = 7
+	DROP_PROB_PER_STEP     = 0.10
+	BAD_EVENT_PROB         = 0.05
+	BASE_DAILY_CHURN       = 0.09
+	MAX_DAYS_SINCE_INSTALL = 7
+	usersPerDay int
+        days        int
+)
+
+// global counters
+var (
+	totalEvents      int64
+	totalInstalls    int64
+	totalRegistrations int64
+)
+
+type Simulator struct {
+	R        *rand.Rand
+	Client   *http.Client
+	Endpoint string
+
+	// persistent users across days
+	Users []*SimUser
+
+	wg sync.WaitGroup
+	mu sync.Mutex // protects Users slice during append
+}
+
+type SimUser struct {
+	DeviceID    string
+	ProfileID   int64
+	RegStep     int
+	Active      bool
+	InstalledAt int
+	Churned     bool
+	LoggedOutTD bool
+	OS          string
+	Type        string
+	Model       string
+	ScreenX     int
+	ScreenY     int
+}
+
+func randomDeviceID() string {
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012xR",
+		rand.Uint32(),
+		rand.Uint32()&0xffff,
+		rand.Uint32()&0xffff,
+		rand.Uint32()&0xffff,
+		rand.Uint64()&0xffffffffffff,
+	)
+}
+
+func NewSimulator(endpoint string, seed int64) *Simulator {
+	return &Simulator{
+		R:        rand.New(rand.NewSource(seed)),
+		Client:   &http.Client{Timeout: 10 * time.Second},
+		Endpoint: endpoint,
+		Users:    make([]*SimUser, 0, 2000),
+	}
+}
+
+func randChoice[T any](r *rand.Rand, arr []T) T { return arr[r.Intn(len(arr))] }
+func randInt(r *rand.Rand, min, max int) int    { return r.Intn(max-min+1) + min }
+
+func NewSimUserFromRand(r *rand.Rand, day int) *SimUser {
+	return &SimUser{
+		DeviceID:    randomDeviceID(),
+		RegStep:     0, // not started
+		Active:      true,
+		InstalledAt: day,
+		OS:          randChoice(r, OSList),
+		Type:        randChoice(r, Types),
+		Model:       randChoice(r, Models),
+		ScreenX:     randInt(r, 720, 1440),
+		ScreenY:     randInt(r, 1280, 2560),
+	}
+}
+
+// enrich extras (note: reg_step only added while profile not yet assigned)
+func enrichExtras(u *SimUser, extras map[string]interface{}) {
+	if extras == nil {
+		return
+	}
+	extras["os"] = u.OS
+	extras["type"] = u.Type
+	extras["model"] = u.Model
+	extras["screen_x"] = u.ScreenX
+	extras["screen_y"] = u.ScreenY
+	extras["active"] = u.Active
+	extras["installed_at"] = u.InstalledAt
+	extras["churned"] = u.Churned
+	extras["logged_out_td"] = u.LoggedOutTD
+	if u.ProfileID == 0 && u.RegStep > 0 {
+		extras["reg_step"] = u.RegStep
+	}
+}
+
+func sendEvent(ctx context.Context, client *http.Client, endpoint string, ev Event) {
+	// marshal gzip and send
+	data, _ := json.Marshal(ev)
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	_, _ = zw.Write(data)
+	zw.Close()
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, &buf)
+	req.Header.Set("Content-Encoding", "gzip")
+	req.Header.Set("Content-Type", "application/json")
+	_, err := client.Do(req)
+	if err != nil {
+		log.Printf("send error: %v", err)
+	}
+
+	atomic.AddInt64(&totalEvents, 1)
+	if ev.Action == "install" {
+		atomic.AddInt64(&totalInstalls, 1)
+	}
+	// registration counter incremented elsewhere upon assigning profile
+}
+
+func (s *Simulator) RunDay(ctx context.Context, day int) {
+	// 1) create usersPerDay new users, schedule install over first 0-20s
+	newUsers := make([]*SimUser, 0, usersPerDay)
+	installDelays := make([]time.Duration, 0, usersPerDay)
+
+	for i := 0; i < usersPerDay; i++ {
+		u := NewSimUserFromRand(s.R, day)
+		newUsers = append(newUsers, u)
+
+		// spread installs over 0..20s (uniform)
+		ms := s.R.Intn(20*1000 + 1) // 0..20000 ms
+		installDelays = append(installDelays, time.Duration(ms)*time.Millisecond)
+	}
+
+	// append new users to global list
+	s.mu.Lock()
+	for _, u := range newUsers {
+		s.Users = append(s.Users, u)
+	}
+	s.mu.Unlock()
+
+	// For each new user launch a goroutine that executes their timeline synchronously:
+	// install (after delay), then registrationFlow (1..7 sync), upon success assign profile and immediately start session
+	for idx, u := range newUsers {
+		delay := installDelays[idx]
+
+		// capture local variables for goroutine
+		s.wg.Add(1)
+		go func(u *SimUser, installDelay time.Duration) {
+			defer s.wg.Done()
+
+			// wait until install time (within minute)
+			time.Sleep(installDelay)
+
+			// SEND install (install should NOT include reg_step)
+			extras := map[string]interface{}{}
+			enrichExtras(u, extras) // note this won't add reg_step because RegStep==0 and ProfileID==0
+			sendEvent(ctx, s.Client, s.Endpoint, Event{
+				DeviceID:  u.DeviceID,
+				ProfileID: u.ProfileID,
+				Action:    "install",
+				Extras:    extras,
+			})
+
+			// registration flow: strictly sequential, sync per user
+			for step := 1; step <= REG_STEPS; step++ {
+				// set current step
+				u.RegStep = step
+
+				// send screen_transition with reg_step (only until profile assigned)
+				extras := map[string]interface{}{"step": step}
+				enrichExtras(u, extras)
+				sendEvent(ctx, s.Client, s.Endpoint, Event{
+					DeviceID:  u.DeviceID,
+					ProfileID: u.ProfileID,
+					Action:    "screen_transition",
+					Extras:    extras,
+				})
+
+				// small delay between steps so they don't all hit instantly (makes sequence visible)
+				time.Sleep(time.Duration(100+ s.R.Intn(400)) * time.Millisecond) // 100-499ms
+
+				// maybe "bad event" -> repeat same step (chance BAD_EVENT_PROB)
+				if s.R.Float64() < BAD_EVENT_PROB {
+					// repeat same step (do not increment step counter)
+					step--
+					continue
+				}
+
+				// maybe drop out
+				if s.R.Float64() < DROP_PROB_PER_STEP && step < REG_STEPS {
+					u.Active = false
+					// leave RegStep as is to resume later
+					return
+				}
+
+				// if reached final step, assign profile AFTER sending the step
+				if step == REG_STEPS {
+					u.ProfileID = s.R.Int63()
+					atomic.AddInt64(&totalRegistrations, 1)
+					// reset RegStep to 0 to indicate no more reg_step should be sent
+					u.RegStep = 0
+
+					// immediately start a session for newly registered user (synchronously)
+					s.runSessionForUser(ctx, u)
+					return
+				}
+			}
+		}(u, delay)
+	}
+
+	// 2) For already-registered users (from previous days and those registered earlier within this same day),
+	// schedule a login sometime uniformly in the minute (excluding those who just got registered and already had session).
+	// We'll schedule them to act within this minute, with random offset 0..60s.
+	s.mu.Lock()
+	existing := make([]*SimUser, 0, len(s.Users))
+	for _, u := range s.Users {
+		// choose registered users that were already registered before this RunDay invocation
+		// i.e., those with ProfileID != 0 and we will schedule a login
+		if u.ProfileID != 0 {
+			existing = append(existing, u)
+		}
+	}
+	s.mu.Unlock()
+
+	for _, u := range existing {
+		// launch a goroutine to perform a session at a random time within minute
+		// to avoid duplicating session for newly registered users who have just been given a session,
+		// only schedule if InstalledAt < day OR (InstalledAt==day but we did not register them here).
+		// To be conservative, schedule only if user was registered before this day (InstalledAt < day)
+		if u.InstalledAt < day {
+			// schedule login offset within minute
+			offsetMs := s.R.Intn(60000) // 0..59999 ms
+			s.wg.Add(1)
+			go func(u *SimUser, offset time.Duration) {
+				defer s.wg.Done()
+				time.Sleep(offset * time.Millisecond)
+				// run session synchronously (login->actions->maybe logout)
+				s.runSessionForUser(ctx, u)
+			}(u, time.Duration(offsetMs))
+		}
+	}
+
+	// Note: we do NOT wait here — caller runSimulation will sleep until the minute boundary.
+	// wg will be waited at the very end of whole simulation to ensure all goroutines finished.
+}
+
+// runSessionForUser executes one session synchronously: login -> N actions -> optional logout
+func (s *Simulator) runSessionForUser(ctx context.Context, u *SimUser) {
+	// if user not active or churned, skip
+	if !u.Active || u.Churned {
+		return
+	}
+	// assign session id
+	sessionID := 0
+	// use non-shared rand for session id to avoid race on s.R (but we can safely use s.R here because caller is single goroutine when creating)
+	// To avoid concurrent access, we just create new rand seeded from global time.
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	sessionID = rnd.Intn(900000) + 100000 // 100000..999999
+
+	// login
+	extras := map[string]interface{}{"session_id": sessionID}
+	enrichExtras(u, extras)
+	sendEvent(ctx, s.Client, s.Endpoint, Event{
+		DeviceID:  u.DeviceID,
+		ProfileID: u.ProfileID,
+		Action:    "login",
+		Extras:    extras,
+	})
+
+	// perform 2..6 actions sequentially
+	N := 2 + rnd.Intn(5) // 2..6
+	for i := 0; i < N; i++ {
+		// small delay between actions
+		time.Sleep(time.Duration(100+rnd.Intn(400)) * time.Millisecond)
+		act := randChoice(rnd, Actions)
+		extras := map[string]interface{}{"session_id": sessionID}
+		enrichExtras(u, extras)
+		sendEvent(ctx, s.Client, s.Endpoint, Event{
+			DeviceID:  u.DeviceID,
+			ProfileID: u.ProfileID,
+			Action:    act,
+			Extras:    extras,
+		})
+		// small chance to early-logout during actions
+		if rnd.Float64() < 0.05 {
+			// logout and end session
+			time.Sleep(time.Duration(50+rnd.Intn(200)) * time.Millisecond)
+			extras := map[string]interface{}{"session_id": sessionID}
+			enrichExtras(u, extras)
+			sendEvent(ctx, s.Client, s.Endpoint, Event{
+				DeviceID:  u.DeviceID,
+				ProfileID: u.ProfileID,
+				Action:    "logout",
+				Extras:    extras,
+			})
+			return
+		}
+	}
+	// final logout (optional)
+	if rnd.Float64() < 0.9 { // 90% chances to logout
+		time.Sleep(time.Duration(50+rnd.Intn(200)) * time.Millisecond)
+		extras := map[string]interface{}{"session_id": sessionID}
+		enrichExtras(u, extras)
+		sendEvent(ctx, s.Client, s.Endpoint, Event{
+			DeviceID:  u.DeviceID,
+			ProfileID: u.ProfileID,
+			Action:    "logout",
+			Extras:    extras,
+		})
+	}
+}
+
+func InstallsAt(t int, plateau, k float64, t0 int, base int, r *rand.Rand) int {
+	// kept for compatibility if you want variable installs; not used now (we use fixed 1000)
+	logistic := plateau / (1.0 + math.Exp(-k*(float64(t)-float64(t0))))
+	season := 1.0 + 0.08*math.Sin(2*math.Pi*float64(t)/7.0)
+	noise := r.NormFloat64() * 0.03
+	val := (logistic * season) * (1.0 + noise)
+	if val < 0 {
+		val = 0
+	}
+	return int(val) + base
+}
+
+func main() {
+	flag.IntVar(&usersPerDay, "u", 1000, "Количество новых пользователей в день")
+        flag.IntVar(&days, "d", 1, "Количество условных дней для генерации")
+	flag.Parse()
+	api := getenv("API_URL", "http://localhost:8080/event")
+	minutesStr := getenv("MINUTES", "1")
+	minutes, _ := strconv.Atoi(minutesStr)
+	if minutes <= 0 {
+		minutes = 1
+	}
+
+	sim := NewSimulator(api, time.Now().UnixNano())
+	ctx := context.Background()
+
+	log.Printf("generator ready at :8090 (API=%s), running %d minute(s)\n", api, minutes)
+
+	// run simulation minutes iterations; each iteration represents "one day" in your terms
+	for day := 0; day < days; day++ {
+		log.Printf("Day %d/%d", day+1, days)
+		sim.RunDay(ctx, day)
+		time.Sleep(time.Minute) // optional: имитация реального дня
+	}
+
+	// after requested minutes, wait for all goroutines (installs/registrations/sessions) to finish
+	sim.wg.Wait()
+
+	// final summary
+	log.Printf("=== simulation finished ===")
+	log.Printf("total events sent: %d", atomic.LoadInt64(&totalEvents))
+	log.Printf("total installs: %d", atomic.LoadInt64(&totalInstalls))
+	log.Printf("total registrations: %d", atomic.LoadInt64(&totalRegistrations))
+}
+
+func getenv(k, d string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return d
+}
