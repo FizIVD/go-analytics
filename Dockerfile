@@ -20,7 +20,7 @@ COPY . .
 # -trimpath, -s -w для меньшего бинарника
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/app .
+    go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/app ./cmd/api
 
 # -------- runtime --------
 FROM alpine:3.20
