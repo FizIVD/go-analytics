@@ -85,7 +85,7 @@ services:
         soft: 262144
         hard: 262144
     volumes:
-      - ./ch_data:/var/lib/clickhouse:Z
+      - clickhouse_data:/var/lib/clickhouse:Z
       - ./init_kafka.sql:/docker-entrypoint-initdb.d/init_kafka.sql
     healthcheck:
       test: ["CMD-SHELL", "wget --spider -q http://localhost:8123/ping || exit 1"]
@@ -131,3 +131,4 @@ networks:
 volumes:
   grafana_data:
   ch_data:
+  clickhouse_data:
