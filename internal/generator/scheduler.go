@@ -5,13 +5,14 @@ import (
 	"compress/gzip"
 	"container/heap"
 	"context"
-	"encoding/json"
 	"hash/fnv"
 	"log"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/bytedance/sonic"
 )
 
 // Event is the generator's internal representation of an event, including scheduling time.
@@ -157,7 +158,7 @@ func (seg *ShardedEventGenerator) Wait() {
 }
 
 func (seg *ShardedEventGenerator) processEvent(ev *Event) {
-	data, _ := json.Marshal(ev)
+	data, _ := sonic.ConfigFastest.Marshal(ev)
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
 	_, _ = zw.Write(data)

@@ -1,0 +1,14 @@
+# Git
+.git
+.gitignore
+
+# Docker
+.dockerignore
+Dockerfile
+docker-compose.yml
+
+# Go cache
+.cache
+
+# Readme
+README.md

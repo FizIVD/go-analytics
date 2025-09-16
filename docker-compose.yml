@@ -2,7 +2,9 @@ version: "3.9"
 
 services:
   api:
-    build: .
+    build:
+      context: .
+      target: api-runtime
     depends_on:
       - kafka
     ports:
@@ -11,6 +13,19 @@ services:
       - KAFKA_HOST=kafka:9092 
       - KAFKA_TOPIC=user-events 
       - PORT=8080
+    networks:
+      - app-network
+
+  generator:
+    build:
+      context: .
+      target: generator-runtime
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      - API_URL=http://api:8080/event
+    command: ["generator", "-u", "1000", "-d", "1"]
     networks:
       - app-network
 
