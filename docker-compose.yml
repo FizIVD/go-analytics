@@ -101,7 +101,7 @@ services:
         hard: 262144
     volumes:
       - clickhouse_data:/var/lib/clickhouse:Z
-      - ./init_kafka.sql:/docker-entrypoint-initdb.d/init_kafka.sql
+      - ./init_clickhouse.sql:/docker-entrypoint-initdb.d/init_clickhouse.sql
     healthcheck:
       test: ["CMD-SHELL", "wget --spider -q http://localhost:8123/ping || exit 1"]
       interval: 10s
@@ -136,6 +136,20 @@ services:
       - "9116:9116"
     depends_on:
       clickhouse:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  startup-checker:
+    build:
+      context: .
+      dockerfile: Dockerfile.checker
+    depends_on:
+      api:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      kafka:
         condition: service_healthy
     networks:
       - app-network
