@@ -1,8 +1,15 @@
-FROM alpine:3.20
+FROM debian:bookworm-slim
 
-RUN apk add --no-cache bash netcat-openbsd wget clickhouse-client kcat
+RUN apt-get update && apt-get install -y \
+    bash \
+    netcat-openbsd \
+    wget \
+    clickhouse-client \
+    kafkacat \
+ && rm -rf /var/lib/apt/lists/*
 
 COPY startup_script.sh /usr/local/bin/startup_script.sh
 RUN chmod +x /usr/local/bin/startup_script.sh
 
 ENTRYPOINT ["/usr/local/bin/startup_script.sh"]
+
