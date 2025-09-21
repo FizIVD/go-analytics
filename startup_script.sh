@@ -36,6 +36,21 @@ else
     echo -e "${RED}Database or tables do not exist.${NC}"
 fi
 
+# Проверяем пользователя
+if [ -n "$CLICKHOUSE_USER" ]; then
+    echo -e "${YELLOW}Testing connection with user: ${CLICKHOUSE_USER}${NC}"
+    
+    if clickhouse-client $CLICKHOUSE_OPTS --query="SELECT 1" >/dev/null 2>&1; then
+        echo -e "${GREEN}Successfully connected as ${CLICKHOUSE_USER}${NC}"
+        
+        # Получаем список ролей и привилегий пользователя
+        USER_ROLES=$(clickhouse-client $CLICKHOUSE_OPTS --raw --query="SELECT arrayStringConcat(groupArray(access_type), ', ') FROM system.grants WHERE entity_name = '$CLICKHOUSE_USER'" 2>/dev/null || echo "[]")
+        echo -e "${GREEN}User ${CLICKHOUSE_USER} has grants: ${USER_ROLES}${NC}"
+    else
+        echo -e "${RED}Failed to connect as ${CLICKHOUSE_USER}${NC}"
+    fi
+fi
+
 # --- Check Kafka ---
 echo -e "${YELLOW}Waiting for Kafka to be healthy...${NC}"
 while ! nc -z kafka 9092; do

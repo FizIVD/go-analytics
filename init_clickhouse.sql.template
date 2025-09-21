@@ -40,3 +40,9 @@ SELECT
     JSONExtractString(value, 'action') AS action,
     JSONExtractRaw(value, 'extras') AS extras
 FROM events.kafka_events;
+
+-- Создание пользователя с паролем , если он не существует
+CREATE USER IF NOT EXISTS ${CLICKHOUSE_USER} IDENTIFIED WITH plaintext_password BY '${CLICKHOUSE_PASSWORD}';
+
+-- Выдача прав на SELECT только по таблице events.events_raw
+GRANT SELECT ON events.events_raw TO ${CLICKHOUSE_USER};

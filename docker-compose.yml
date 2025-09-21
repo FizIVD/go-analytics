@@ -108,7 +108,8 @@ services:
         hard: 262144
     volumes:
       - clickhouse_data:/var/lib/clickhouse:Z
-      - ./init_clickhouse.sql:/docker-entrypoint-initdb.d/init_clickhouse.sql
+      - ./init_clickhouse.sql.template:/docker-entrypoint-initdb.d/init_clickhouse.sql.template
+      - ./init_clickhouse.sh:/docker-entrypoint-initdb.d/init_clickhouse.sh
     healthcheck:
       test: ["CMD-SHELL", "wget --spider -q http://localhost:8123/ping || exit 1"]
       interval: 10s
