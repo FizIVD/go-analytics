@@ -100,6 +100,8 @@ services:
       CLICKHOUSE_DB: events
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_GRAFANA_USER: grafana
+      CLICKHOUSE_GRAFANA_PASSWORD: grafana
     ports:
       - "8123:8123"
     ulimits:
@@ -129,6 +131,8 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/:/etc/grafana/provisioning/
+      - ./grafana/dashboards/:/var/lib/grafana/dashboards/
     networks:
       - app-network
 
