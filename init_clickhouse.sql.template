@@ -46,3 +46,9 @@ CREATE USER IF NOT EXISTS ${CLICKHOUSE_USER} IDENTIFIED WITH plaintext_password 
 
 -- Выдача прав на SELECT только по таблице events.events_raw
 GRANT SELECT ON events.events_raw TO ${CLICKHOUSE_USER};
+
+-- Создание пользователя для Grafana
+CREATE USER IF NOT EXISTS ${CLICKHOUSE_GRAFANA_USER} IDENTIFIED WITH plaintext_password BY '${CLICKHOUSE_GRAFANA_PASSWORD}';
+
+-- Выдача прав на SELECT для пользователя Grafana
+GRANT SELECT ON events.events_raw TO ${CLICKHOUSE_GRAFANA_USER};
