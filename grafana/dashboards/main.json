@@ -13,296 +13,85 @@
     ]
   },
   "editable": true,
-  "gnetId": null,
-  "graphTooltip": 0,
-  "id": 1,
-  "links": [],
+  "id": null,
   "panels": [
     {
-      "datasource": "ClickHouse",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 0,
-        "y": 0
-      },
+      "datasource": "grafana-clickhouse-datasource",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 0 },
       "id": 2,
       "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single"
-        }
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
       },
       "title": "Events per Minute",
       "type": "timeseries",
       "targets": [
         {
           "refId": "A",
-          "datasource": "ClickHouse",
-          "query": "SELECT toStartOfMinute(event_time) AS time, count() AS cnt FROM events.events_raw GROUP BY time ORDER BY time"
+          "rawSql": "SELECT\n  toStartOfMinute(event_time) AS time,\n  count() AS cnt\nFROM events.events_raw\nGROUP BY time\nORDER BY time"
         }
       ]
     },
     {
-      "datasource": "ClickHouse",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 12,
-        "y": 0
-      },
+      "datasource": "grafana-clickhouse-datasource",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 0 },
       "id": 4,
       "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single"
-        }
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
       },
       "title": "Top 5 Actions",
       "type": "barchart",
       "targets": [
         {
           "refId": "A",
-          "datasource": "ClickHouse",
-          "query": "SELECT action, count() AS cnt FROM events.events_raw GROUP BY action ORDER BY cnt DESC LIMIT 5"
+          "rawSql": "SELECT\n  action,\n  count() AS cnt\nFROM events.events_raw\nGROUP BY action\nORDER BY cnt DESC\nLIMIT 5"
         }
       ]
     },
     {
-      "datasource": "ClickHouse",
+      "datasource": "grafana-clickhouse-datasource",
       "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
+        "defaults": { "min": 0 },
         "overrides": []
       },
-      "gridPos": {
-        "h": 9,
-        "w": 24,
-        "x": 0,
-        "y": 9
-      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 9 },
       "id": 6,
       "options": {
-        "displayMode": "label",
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "single"
-        }
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
       },
-      "pluginVersion": "8.5.2",
       "title": "User Registration Funnel",
-      "type": "flant-statusmap-panel",
+      "type": "mckn-funnel-panel",
+      "transformations": [
+        { "id": "rowsToFields", "options": {} }
+      ],
       "targets": [
         {
           "refId": "A",
-          "datasource": "ClickHouse",
-          "query": "SELECT 'Step 1' as step, count(distinct profile_id) as users FROM events.events_raw WHERE action = 'register_step_1' UNION ALL SELECT 'Step 2' as step, count(distinct profile_id) as users FROM events.events_raw WHERE action = 'register_step_2' UNION ALL SELECT 'Step 3' as step, count(distinct profile_id) as users FROM events.events_raw WHERE action = 'register_step_3' UNION ALL SELECT 'Step 4' as step, count(distinct profile_id) as users FROM events.events_raw WHERE action = 'register_step_4' UNION ALL SELECT 'Step 5' as step, count(distinct profile_id) as users FROM events.events_raw WHERE action = 'register_step_5' UNION ALL SELECT 'Step 6' as step, count(distinct profile_id) as users FROM events.events_raw WHERE action = 'register_step_6' UNION ALL SELECT 'Step 7' as step, count(distinct profile_id) as users FROM events.events_raw WHERE action = 'register_step_7'"
+          "rawSql": "SELECT\n    concat('Step ', toString(JSONExtractInt(extras, 'reg_step'))) AS step_label,\n    count(DISTINCT device_id) AS users\nFROM events.events_raw\nWHERE action = 'screen_transition'\n  AND JSONExtractInt(extras, 'reg_step') > 0\nGROUP BY step_label, JSONExtractInt(extras, 'reg_step')\nORDER BY JSONExtractInt(extras, 'reg_step')"
         }
       ]
     },
     {
-      "datasource": "ClickHouse",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "align": "auto",
-            "displayMode": "auto"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 24,
-        "x": 0,
-        "y": 18
-      },
+      "datasource": "grafana-clickhouse-datasource",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 18 },
       "id": 8,
-      "options": {
-        "showHeader": true
-      },
+      "options": { "showHeader": true },
       "title": "Retention for First Minute Users",
       "type": "table",
       "targets": [
         {
           "refId": "A",
-          "datasource": "ClickHouse",
-          "query": "WITH (SELECT min(event_time) FROM events.events_raw) AS first_event_time SELECT toDate(event_time) AS day, count(DISTINCT profile_id) AS active_users FROM events.events_raw WHERE profile_id IN (SELECT DISTINCT profile_id FROM events.events_raw WHERE event_time >= first_event_time AND event_time < first_event_time + INTERVAL 1 MINUTE) GROUP BY day ORDER BY day"
+          "rawSql": "WITH (SELECT min(event_time) FROM events.events_raw) AS first_event_time\nSELECT\n  toDate(event_time) AS day,\n  count(DISTINCT profile_id) AS active_users\nFROM events.events_raw\nWHERE profile_id IN (\n  SELECT DISTINCT profile_id\n  FROM events.events_raw\n  WHERE event_time >= first_event_time\n    AND event_time < first_event_time + INTERVAL 1 MINUTE\n)\nGROUP BY day\nORDER BY day"
         }
       ]
     }
   ],
   "schemaVersion": 35,
   "style": "dark",
-  "tags": [],
-  "templating": {
-    "list": []
-  },
-  "time": {
-    "from": "now-6h",
-    "to": "now"
-  },
-  "timepicker": {},
+  "time": { "from": "now-6h", "to": "now" },
   "timezone": "browser",
   "title": "User Events Dashboard",
   "uid": "user-events",
