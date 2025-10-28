@@ -16,21 +16,25 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # копируем исходники
 COPY . .
 
-# сборка только main-пакета (предположим, что main в корне)
-# -trimpath, -s -w для меньшего бинарника
+# сборка приложений
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/app .
+    go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
 
-# -------- runtime --------
-FROM alpine:3.20
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/generator ./cmd/generator
+
+
+# -------- api runtime --------
+FROM alpine:3.20 AS api-runtime
 
 # неблокирующий юзер + сертификаты
 RUN adduser -D -H -u 10001 appuser && \
     apk --no-cache add ca-certificates
 
-WORKDIR /home/app
-COPY --from=builder /out/app /usr/local/bin/app
+WORKDIR /home/appuser
+COPY --from=builder /out/api /usr/local/bin/api
 
 EXPOSE 8080
 USER appuser
@@ -38,4 +42,16 @@ USER appuser
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
   CMD wget -qO- http://127.0.0.1:8080/health >/dev/null 2>&1 || exit 1
 
-CMD ["app"]
+CMD ["api"]
+
+# -------- generator runtime --------
+FROM alpine:3.20 AS generator-runtime
+
+RUN adduser -D -H -u 10001 appuser && \
+    apk --no-cache add ca-certificates
+
+WORKDIR /home/appuser
+COPY --from=builder /out/generator /usr/local/bin/generator
+
+USER appuser
+CMD ["generator"]

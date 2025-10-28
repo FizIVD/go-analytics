@@ -1,0 +1,99 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "id": null,
+  "panels": [
+    {
+      "datasource": "grafana-clickhouse-datasource",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 0 },
+      "id": 2,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
+      },
+      "title": "Events per Minute",
+      "type": "timeseries",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT\n  toStartOfMinute(event_time) AS time,\n  count() AS cnt\nFROM events.events_raw\nGROUP BY time\nORDER BY time"
+        }
+      ]
+    },
+    {
+      "datasource": "grafana-clickhouse-datasource",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 0 },
+      "id": 4,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
+      },
+      "title": "Top 5 Actions",
+      "type": "barchart",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT\n  action,\n  count() AS cnt\nFROM events.events_raw\nGROUP BY action\nORDER BY cnt DESC\nLIMIT 5"
+        }
+      ]
+    },
+    {
+      "datasource": "grafana-clickhouse-datasource",
+      "fieldConfig": {
+        "defaults": { "min": 0 },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 9 },
+      "id": 6,
+      "options": {
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showUnfilled": true
+      },
+      "title": "User Registration Funnel",
+      "type": "mckn-funnel-panel",
+      "transformations": [
+        { "id": "rowsToFields", "options": {} }
+      ],
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "SELECT\n    concat('Step ', toString(JSONExtractInt(extras, 'reg_step'))) AS step_label,\n    count(DISTINCT device_id) AS users\nFROM events.events_raw\nWHERE action = 'screen_transition'\n  AND JSONExtractInt(extras, 'reg_step') > 0\nGROUP BY step_label, JSONExtractInt(extras, 'reg_step')\nORDER BY JSONExtractInt(extras, 'reg_step')"
+        }
+      ]
+    },
+    {
+      "datasource": "grafana-clickhouse-datasource",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 18 },
+      "id": 8,
+      "options": { "showHeader": true },
+      "title": "Retention for First Minute Users",
+      "type": "table",
+      "targets": [
+        {
+          "refId": "A",
+          "rawSql": "WITH (SELECT min(event_time) FROM events.events_raw) AS first_event_time\nSELECT\n  toDate(event_time) AS day,\n  count(DISTINCT profile_id) AS active_users\nFROM events.events_raw\nWHERE profile_id IN (\n  SELECT DISTINCT profile_id\n  FROM events.events_raw\n  WHERE event_time >= first_event_time\n    AND event_time < first_event_time + INTERVAL 1 MINUTE\n)\nGROUP BY day\nORDER BY day"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 35,
+  "style": "dark",
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "User Events Dashboard",
+  "uid": "user-events",
+  "version": 1
+}

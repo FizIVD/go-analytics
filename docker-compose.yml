@@ -2,7 +2,9 @@ version: "3.9"
 
 services:
   api:
-    build: .
+    build:
+      context: .
+      target: api-runtime
     depends_on:
       - kafka
     ports:
@@ -13,6 +15,23 @@ services:
       - PORT=8080
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      retries: 12
+      timeout: 5s
+
+  generator:
+    build:
+      context: .
+      target: generator-runtime
+    depends_on:
+      - api
+    environment:
+      - API_URL=http://api:8080/event
+    networks:
+      - app-network
+    profiles: ["generator"]
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.0
@@ -46,15 +65,18 @@ services:
       timeout: 5s
     networks:
       - app-network
-  
+
   kafka-init:
     image: confluentinc/cp-kafka:7.4.0
     depends_on:
       - kafka
     entrypoint: >
       sh -c "
-      while ! kafka-topics --bootstrap-server kafka:9092 --list > /dev/null 2>&1; do sleep 1; done;
+      until kafka-topics --bootstrap-server kafka:9092 --list > /dev/null 2>&1; do sleep 1; done;
       kafka-topics --bootstrap-server kafka:9092 --create --topic user-events --partitions 12 --replication-factor 1 || echo 'exists';
+      # Ждем пока топик будет полностью готов
+      until kafka-topics --bootstrap-server kafka:9092 --describe --topic user-events > /dev/null 2>&1; do sleep 1; done;
+      echo 'kafka-init-completed' > /tmp/init-complete
       "
     networks:
       - app-network
@@ -78,6 +100,8 @@ services:
       CLICKHOUSE_DB: events
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_GRAFANA_USER: grafana
+      CLICKHOUSE_GRAFANA_PASSWORD: grafana
     ports:
       - "8123:8123"
     ulimits:
@@ -85,8 +109,9 @@ services:
         soft: 262144
         hard: 262144
     volumes:
-      - ./ch_data:/var/lib/clickhouse:Z
-      - ./init_kafka.sql:/docker-entrypoint-initdb.d/init_kafka.sql
+      - clickhouse_data:/var/lib/clickhouse:Z
+      - ./init_clickhouse.sql.template:/docker-entrypoint-initdb.d/init_clickhouse.sql.template
+      - ./init_clickhouse.sh:/docker-entrypoint-initdb.d/init_clickhouse.sh
     healthcheck:
       test: ["CMD-SHELL", "wget --spider -q http://localhost:8123/ping || exit 1"]
       interval: 10s
@@ -97,16 +122,17 @@ services:
 
   grafana:
     image: grafana/grafana:latest
+    depends_on:
+      - clickhouse
     ports:
       - "3000:3000"
-    depends_on:
-      clickhouse:
-        condition: service_healthy
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/:/etc/grafana/provisioning/
+      - ./grafana/dashboards/:/var/lib/grafana/dashboards/
     networks:
       - app-network
 
@@ -120,8 +146,21 @@ services:
     ports:
       - "9116:9116"
     depends_on:
-      clickhouse:
-        condition: service_healthy
+      - clickhouse
+    networks:
+      - app-network
+
+  startup-checker:
+    build:
+      context: .
+      dockerfile: Dockerfile.checker
+    depends_on:
+      - api
+      - clickhouse
+      - kafka
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
     networks:
       - app-network
 
@@ -131,3 +170,4 @@ networks:
 volumes:
   grafana_data:
   ch_data:
+  clickhouse_data:
